@@ -18,12 +18,80 @@ import {
   MessageCircle,
   Target,
   Heart,
-  RotateCcw
+  RotateCcw,
+  User,
+  LogOut
 } from 'lucide-react';
+
+// Firebase Imports
+import { auth, db } from './firebase';
+import { 
+  signInWithPopup, 
+  GoogleAuthProvider, 
+  signOut, 
+  onAuthStateChanged,
+  User as FirebaseUser
+} from 'firebase/auth';
+import { 
+  collection, 
+  onSnapshot, 
+  query, 
+  addDoc, 
+  serverTimestamp,
+  setDoc,
+  doc,
+  getDocs
+} from 'firebase/firestore';
+
+// --- Error Handling ---
+
+import { getDocFromServer } from 'firebase/firestore';
+
+async function testConnection() {
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+  } catch (error) {
+    if(error instanceof Error && error.message.includes('the client is offline')) {
+      console.error("Please check your Firebase configuration. ");
+    }
+  }
+}
+testConnection();
+
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: any;
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  // In a real app, you might show a toast here
+}
 
 // --- Components ---
 
-const Navbar = () => {
+const Navbar = ({ user }: { user: FirebaseUser | null }) => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -34,6 +102,17 @@ const Navbar = () => {
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  const handleLogin = async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+    } catch (error) {
+      console.error('Login error:', error);
+    }
+  };
+
+  const handleLogout = () => signOut(auth);
 
   const navLinks = [
     { name: 'About', href: '#about' },
@@ -48,7 +127,7 @@ const Navbar = () => {
         <a href="#" className="text-3xl font-display tracking-widest text-espresso">SUSHYAM</a>
         
         {/* Desktop Nav */}
-        <div className="hidden md:flex gap-10">
+        <div className="hidden md:flex items-center gap-10">
           {navLinks.map((link) => (
             <a 
               key={link.name} 
@@ -58,6 +137,22 @@ const Navbar = () => {
               {link.name}
             </a>
           ))}
+          
+          {user ? (
+            <div className="flex items-center gap-4 pl-6 border-l border-sand/30">
+              <img src={user.photoURL || ''} alt={user.displayName || ''} className="w-8 h-8 rounded-full border border-gold" referrerPolicy="no-referrer" />
+              <button onClick={handleLogout} className="text-espresso hover:text-gold transition-colors">
+                <LogOut size={18} />
+              </button>
+            </div>
+          ) : (
+            <button 
+              onClick={handleLogin}
+              className="flex items-center gap-2 text-sm font-medium uppercase tracking-widest hover:text-gold transition-colors pl-6 border-l border-sand/30"
+            >
+              <User size={18} /> Login
+            </button>
+          )}
         </div>
 
         {/* Mobile Menu Toggle */}
@@ -97,14 +192,11 @@ const Navbar = () => {
                   {link.name}
                 </a>
               ))}
-            </div>
-            <div className="mt-auto pt-8 border-t border-sand/30">
-              <p className="text-sm uppercase tracking-widest text-bark mb-4">Since 1883</p>
-              <div className="flex gap-6">
-                <Instagram size={20} />
-                <Mail size={20} />
-                <MessageCircle size={20} />
-              </div>
+              {user ? (
+                <button onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }} className="text-4xl font-display text-left text-bark">Logout</button>
+              ) : (
+                <button onClick={() => { handleLogin(); setIsMobileMenuOpen(false); }} className="text-4xl font-display text-left text-gold">Login</button>
+              )}
             </div>
           </motion.div>
         )}
@@ -188,7 +280,7 @@ const Hero = () => {
           className="relative z-10 w-[80%] max-w-md animate-float"
         >
           <img 
-            src="https://picsum.photos/seed/perfume-group/800/1000" 
+            src="https://storage.googleapis.com/datagen-public/input_file_4.png" 
             alt="Sushyam Collection Group Shot" 
             className="w-full h-auto drop-shadow-2xl"
             referrerPolicy="no-referrer"
@@ -275,7 +367,7 @@ const About = () => {
         <motion.div style={{ y }} className="relative">
           <div className="absolute inset-0 bg-warm-bg/20 -m-6 rounded-sm -z-10" />
           <img 
-            src="https://picsum.photos/seed/flovera-bottle/800/1000" 
+            src="https://storage.googleapis.com/datagen-public/input_file_2.png" 
             alt="Flovera Perfume Bottle" 
             className="w-full h-auto shadow-2xl rounded-sm grayscale-[0.2] hover:grayscale-0 transition-all duration-700"
             referrerPolicy="no-referrer"
@@ -348,30 +440,82 @@ const ScentCard: React.FC<ScentCardProps> = ({ scent }) => {
 };
 
 const Collection = () => {
-  const scents = [
-    { 
-      name: 'Mahoghony', 
-      tags: 'Woody · Warm · Grounded', 
-      image: 'https://picsum.photos/seed/mahoghony/800/1000',
-      badge: '🔥 Low Stock'
-    },
-    { 
-      name: 'God Father', 
-      tags: 'Intense · Smoky · Commanding', 
-      image: 'https://picsum.photos/seed/godfather/800/1000',
-      badge: '⚡ Bestseller'
-    },
-    { 
-      name: 'Flovera', 
-      tags: 'Floral · Soft · Luminous', 
-      image: 'https://picsum.photos/seed/flovera/800/1000' 
-    },
-    { 
-      name: 'Evan', 
-      tags: 'Fresh · Aquatic · Clean', 
-      image: 'https://picsum.photos/seed/evan/800/1000' 
-    },
-  ];
+  const [scents, setScents] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const q = query(collection(db, 'products'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const productsData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setScents(productsData);
+      setLoading(false);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'products');
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const seedDatabase = async () => {
+    const initialProducts = [
+      { 
+        id: "mahoghony",
+        name: "Mahoghony", 
+        tags: "Woody · Warm · Grounded", 
+        image: "https://storage.googleapis.com/datagen-public/input_file_0.png",
+        badge: "🔥 Low Stock",
+        prices: { "3ml": 99, "5ml": 149 }
+      },
+      { 
+        id: "godfather",
+        name: "God Father", 
+        tags: "Intense · Smoky · Commanding", 
+        image: "https://storage.googleapis.com/datagen-public/input_file_1.png",
+        badge: "⚡ Bestseller",
+        prices: { "3ml": 99, "5ml": 149 }
+      },
+      { 
+        id: "flovera",
+        name: "Flovera", 
+        tags: "Floral · Soft · Luminous", 
+        image: "https://storage.googleapis.com/datagen-public/input_file_2.png",
+        prices: { "3ml": 99, "5ml": 149 }
+      },
+      { 
+        id: "evan",
+        name: "Evan", 
+        tags: "Fresh · Aquatic · Clean", 
+        image: "https://storage.googleapis.com/datagen-public/input_file_3.png",
+        prices: { "3ml": 99, "5ml": 149 }
+      },
+    ];
+
+    try {
+      // Use setDoc with specific IDs to overwrite existing products
+      for (const product of initialProducts) {
+        await setDoc(doc(db, 'products', product.id), product);
+      }
+      alert('Database updated with new images successfully!');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'products');
+    }
+  };
+
+  const isAdmin = auth.currentUser?.email === "khushraja5@gmail.com";
+
+  if (loading) {
+    return (
+      <section id="collection" className="py-24 md:py-40 bg-warm-bg/20">
+        <div className="max-w-7xl mx-auto px-6 text-center">
+          <p className="text-bark animate-pulse">Loading collection...</p>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section id="collection" className="py-24 md:py-40 bg-warm-bg/20">
@@ -380,11 +524,20 @@ const Collection = () => {
           <span className="text-xs uppercase tracking-[0.3em] text-gold font-semibold mb-6 block">The Collection</span>
           <h2 className="text-5xl md:text-6xl font-display mb-6">Find your signature scent</h2>
           <p className="text-bark max-w-lg mx-auto">Four distinct personalities. One pure formula.</p>
+          
+          {isAdmin && (
+            <button 
+              onClick={seedDatabase}
+              className="mt-8 px-6 py-2 border border-gold text-gold hover:bg-gold hover:text-white transition-all uppercase tracking-widest text-xs"
+            >
+              {scents.length === 0 ? 'Seed Products' : 'Update Images (Admin)'}
+            </button>
+          )}
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
           {scents.map((scent) => (
-            <ScentCard key={scent.name} scent={scent} />
+            <ScentCard key={scent.id} scent={scent} />
           ))}
         </div>
       </div>
@@ -639,6 +792,17 @@ const StickyBar = () => {
 // --- Main App ---
 
 export default function App() {
+  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setUser(user);
+      setIsAuthReady(true);
+    });
+    return () => unsubscribe();
+  }, []);
+
   // Fade-in animation for sections
   const Section = ({ children, className = "" }: { children: ReactNode, className?: string }) => {
     return (
@@ -654,9 +818,17 @@ export default function App() {
     );
   };
 
+  if (!isAuthReady) {
+    return (
+      <div className="min-h-screen bg-cream flex items-center justify-center">
+        <div className="text-2xl font-display tracking-widest animate-pulse">SUSHYAM</div>
+      </div>
+    );
+  }
+
   return (
     <div className="selection:bg-gold selection:text-cream">
-      <Navbar />
+      <Navbar user={user} />
       
       <main>
         <Hero />

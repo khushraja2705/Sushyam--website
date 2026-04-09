@@ -1,0 +1,56 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "A perfume product sold by Sushyam.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "The name of the scent." },
+        "tags": { "type": "string", "description": "Scent profile descriptors." },
+        "image": { "type": "string", "description": "URL to the product image." },
+        "badge": { "type": "string", "description": "Optional badge like 'Bestseller'." },
+        "prices": {
+          "type": "object",
+          "properties": {
+            "3ml": { "type": "number" },
+            "5ml": { "type": "number" }
+          }
+        }
+      },
+      "required": ["name", "tags", "image", "prices"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "A customer order.",
+      "type": "object",
+      "properties": {
+        "userEmail": { "type": "string", "format": "email" },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "productId": { "type": "string" },
+              "size": { "type": "string", "enum": ["3ml", "5ml"] },
+              "quantity": { "type": "number" }
+            }
+          }
+        },
+        "total": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "completed", "cancelled"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userEmail", "items", "total", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Collection of available perfumes."
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Customer orders."
+    }
+  }
+}
